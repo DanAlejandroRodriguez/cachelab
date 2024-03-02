@@ -1,173 +1,237 @@
-/*
- * trans.col - Matrix transpose B = A^T
+/**
+ * @file trans.c
+ * @brief Contains various implementations of matrix transpose
  *
  * Each transpose function must have a prototype of the form:
- * void trans(int M, int N, int A[N][M], int B[M][N]);
+ *   void trans(size_t M, size_t N, double A[N][M], double B[M][N],
+ *              double tmp[TMPCOUNT]);
  *
- * A transpose function is evaluated by counting the number of misses
- * on a 1KB direct mapped cache with a block size of 32 bytes.
+ * All transpose functions take the following arguments:
+ *
+ *   @param[in]     M    Width of A, height of B
+ *   @param[in]     N    Height of A, width of B
+ *   @param[in]     A    Source matrix
+ *   @param[out]    B    Destination matrix
+ *   @param[in,out] tmp  Array that can store temporary double values
+ *
+ * A transpose function is evaluated by counting the number of hits and misses,
+ * using the cache parameters and score computations described in the writeup.
+ *
+ * Programming restrictions:
+ *   - No out-of-bounds references are allowed
+ *   - No alterations may be made to the source array A
+ *   - Data in tmp can be read or written
+ *   - This file cannot contain any local or global doubles or arrays of doubles
+ *   - You may not use unions, casting, global variables, or
+ *     other tricks to hide array data in other forms of local or global memory.
+ *
+ * TODO: fill in your name and Andrew ID below.
+ * @author Your Name <andrewid@andrew.cmu.edu>
  */
+
+#include <assert.h>
+#include <stdbool.h>
 #include <stdio.h>
+
 #include "cachelab.h"
+#define MY_MAGIC_NUMBER_1 256
+#define MY_MAGIC_NUMBER_2 64
+#define MY_MAGIC_NUMBER_3 16
+#define MY_MAGIC_NUMBER_4 8
 
-int is_transpose(int M, int N, int A[N][M], int B[M][N]);
-
-/*
- * transpose_submit - This is the solution transpose function that you
- *     will be graded on for Part B of the assignment. Do not change
- *     the description string "Transpose submission", as the driver
- *     searches for that string to identify the transpose function to
- *     be graded.
+/**
+ * @brief Checks if B is the transpose of A.
+ *
+ * You can call this function inside of an assertion, if you'd like to verify
+ * the correctness of a transpose function.
+ *
+ * @param[in]     M    Width of A, height of B
+ * @param[in]     N    Height of A, width of B
+ * @param[in]     A    Source matrix
+ * @param[out]    B    Destination matrix
+ *
+ * @return True if B is the transpose of A, and false otherwise.
  */
-char transpose_submit_desc[] = "Transpose submission";
-void transpose_submit(int M, int N, int A[N][M], int B[M][N]) {
-    int blockForRow, blockForCol; 
-    int row, col;
-    int v0, v1, v2, v3, v4, v5, v6, v7;
-
-    if (N == 32) {
-        for (blockForCol = 0; blockForCol < M; blockForCol += 8) {
-            for (blockForRow = 0; blockForRow < N; blockForRow += 8) {
-                for (row = blockForRow; row < blockForRow + 8; row++) {
-                    for (col = blockForCol; col < blockForCol + 8; col++) {
-                        if (row != col) {
-                            B[col][row] = A[row][col];
-                        } else {
-                            v0 = A[row][col];
-                            v1 = row;
-                        }
-                    }
-                    if (blockForRow == blockForCol) {
-                        B[v1][v1] = v0;
-                    }
-                }
-            }
-        }
-    } else if (N == 64) {
-        for (blockForCol = 0; blockForCol < M; blockForCol += 8) {
-            for (blockForRow = 0; blockForRow < N; blockForRow += 8) {
-                for (row = blockForRow; row < blockForRow + 4; row++) {
-                    v0 = A[row][blockForCol];
-                    v1 = A[row][blockForCol + 1];
-                    v2 = A[row][blockForCol + 2];
-                    v3 = A[row][blockForCol + 3];
-                    v4 = A[row][blockForCol + 4];
-                    v5 = A[row][blockForCol + 5];
-                    v6 = A[row][blockForCol + 6];
-                    v7 = A[row][blockForCol + 7];
-                    B[blockForCol][row] = v0;
-                    B[blockForCol + 1][row] = v1;
-                    B[blockForCol + 2][row] = v2;
-                    B[blockForCol + 3][row] = v3;
-                    B[blockForCol][row + 4] = v4;
-                    B[blockForCol + 1][row + 4] = v5;
-                    B[blockForCol + 2][row + 4] = v6;
-                    B[blockForCol + 3][row + 4] = v7;
-                }
-                for (col = blockForCol; col < blockForCol + 4; col++) {
-
-                    // A left-down
-                    v4 = A[blockForRow + 4][col];
-                    v5 = A[blockForRow + 5][col];
-                    v6 = A[blockForRow + 6][col];
-                    v7 = A[blockForRow + 7][col];
-
-                    // B right-above
-                    v0 = B[col][blockForRow + 4];
-                    v1 = B[col][blockForRow + 5];
-                    v2 = B[col][blockForRow + 6];
-                    v3 = B[col][blockForRow + 7];
-
-                    // set B right-above
-                    B[col][blockForRow + 4] = v4;
-                    B[col][blockForRow + 5] = v5;
-                    B[col][blockForRow + 6] = v6;
-                    B[col][blockForRow + 7] = v7;
-
-                    // set B left-down
-                    B[col + 4][blockForRow] = v0;
-                    B[col + 4][blockForRow + 1] = v1;
-                    B[col + 4][blockForRow + 2] = v2;
-                    B[col + 4][blockForRow + 3] = v3;
-
-                    // set B right-down
-                    B[col + 4][blockForRow + 4] = A[blockForRow + 4][col + 4];
-                    B[col + 4][blockForRow + 5] = A[blockForRow + 5][col + 4];
-                    B[col + 4][blockForRow + 6] = A[blockForRow + 6][col + 4];
-                    B[col + 4][blockForRow + 7] = A[blockForRow + 7][col + 4];
-                }
-            }
-        }
-    } else {
-        for (blockForCol = 0; blockForCol < M; blockForCol += 16) {
-            for (blockForRow = 0; blockForRow < N; blockForRow += 16) {
-                for (row = blockForRow; (row < N) && (row < blockForRow + 16); row++) {
-                    for (col = blockForCol; (col < M) && (col < blockForCol + 16); col++) {
-                        if (row != col) {
-                            B[col][row] = A[row][col];
-                        } else {
-                            v0 = A[row][col];
-                            v1 = row;
-                        }
-                    }
-                    if (blockForRow == blockForCol) {
-                        B[v1][v1] = v0;
-                    }
-                }
-            }
-        }
-    }
-}
-
-/*
- * You can define additional transpose functions below. We've defined
- * a simple one below to help you get started.
- */
-
-/*
- * trans - A simple baseline transpose function, not optimized for the cache.
- */
-char trans_desc[] = "Simple row-wise scan transpose";
-void trans(int M, int N, int A[N][M], int B[M][N]) {
-    int i, j, tmp;
-
-    for (i = 0; i < N; i++) {
-        for (j = 0; j < M; j++) {
-            tmp = A[i][j];
-            B[j][i] = tmp;
-        }
-    }
-}
-
-/*
- * registerFunctions - This function registers your transpose
- *     functions with the driver.  At runtime, the driver will
- *     evaluate each of the registered functions and summarize their
- *     performance. This is a handy way to experiment with different
- *     transpose strategies.
- */
-void registerFunctions() {
-    /* register your solution function */
-    registerTransFunction(transpose_submit, transpose_submit_desc);
-
-    /* register any additional transpose functions */
-    registerTransFunction(trans, trans_desc);
-}
-
-/*
- * is_transpose - This helper function checks if B is the transpose of
- *     A. You can check the correctness of your transpose by calling
- *     it before returning from the transpose function.
- */
-int is_transpose(int M, int N, int A[N][M], int B[M][N]) {
-    int i, j;
-
-    for (i = 0; i < N; i++) {
-        for (j = 0; j < M; ++j) {
+#ifndef NDEBUG
+static bool is_transpose(size_t M, size_t N, double A[N][M], double B[M][N]) {
+    for (size_t i = 0; i < N; i++) {
+        for (size_t j = 0; j < M; ++j) {
             if (A[i][j] != B[j][i]) {
-                return 0;
+                fprintf(stderr,
+                        "Transpose incorrect.  Fails for B[%zd][%zd] = %.3f, "
+                        "A[%zd][%zd] = %.3f\n",
+                        j, i, B[j][i], i, j, A[i][j]);
+                return false;
             }
         }
     }
-    return 1;
+    return true;
+}
+#endif
+
+/*
+ * You can define additional transpose functions here. We've defined
+ * some simple ones below to help you get started, which you should
+ * feel free to modify or delete.
+ */
+
+/**
+ * @brief A simple baseline transpose function, not optimized for the cache.
+ *
+ * Note the use of asserts (defined in assert.h) that add checking code.
+ * These asserts are disabled when measuring cycle counts (i.e. when running
+ * the ./test-trans) to avoid affecting performance.
+ */
+static void trans_basic(size_t M, size_t N, double A[N][M], double B[M][N],
+                        double tmp[TMPCOUNT]) {
+    assert(M > 0);
+    assert(N > 0);
+
+    for (size_t i = 0; i < N; i++) {
+        for (size_t j = 0; j < M; j++) {
+            B[j][i] = A[i][j];
+        }
+    }
+
+    assert(is_transpose(M, N, A, B));
+}
+
+/**
+ * @brief A contrived example to illustrate the use of the temporary array.
+ *
+ * This function uses the first four elements of tmp as a 2x2 array with
+ * row-major ordering.
+ */
+static void trans_tmp(size_t M, size_t N, double A[N][M], double B[M][N],
+                      double tmp[TMPCOUNT]) {
+    assert(M > 0);
+    assert(N > 0);
+
+    for (size_t i = 0; i < N; i++) {
+        for (size_t j = 0; j < M; j++) {
+            size_t di = i % 2;
+            size_t dj = j % 2;
+            tmp[2 * di + dj] = A[i][j];
+            B[j][i] = tmp[2 * di + dj];
+        }
+    }
+
+    assert(is_transpose(M, N, A, B));
+}
+
+static void transpose32(size_t M, size_t N, double A[N][M], double B[M][N],
+                        double tmp[TMPCOUNT]) {
+    assert(M > 0);
+    assert(N > 0);
+    size_t bRow = 0, bCol = 0, r = 0, c = 0;
+    if (N == 32) {
+        while (bCol < M) {
+            while (bRow < N) {
+                r = bRow;
+                while (r < bRow + MY_MAGIC_NUMBER_4) {
+                    c = bCol;
+                    while (c < bCol + MY_MAGIC_NUMBER_4) {
+                        if (r != c) B[c][r] = A[r][c]; 
+                        else {
+                            tmp[0] = A[r][c];
+                             tmp[1] = (double)r;
+                        }
+                        c++;
+                    }
+                    if (bRow == bCol) B[(size_t)tmp[1]][(size_t)tmp[1]] = tmp[0];
+                    r++;
+                }
+                bRow += MY_MAGIC_NUMBER_4;
+            }
+            bCol += MY_MAGIC_NUMBER_4;
+        }
+    }
+}
+
+static void transpose64(size_t M, size_t N, double A[N][M], double B[M][N],
+                        double tmp[TMPCOUNT]) {
+    assert(M > 0);
+    assert(N > 0);
+    size_t bRow = 0, bCol = 0, r = 0, c = 0;
+    while (bCol < M) {
+        while (bRow < N) {
+            r = bRow;
+            while (r < bRow + 4) {
+                for (size_t i = 0; i < MY_MAGIC_NUMBER_4; i++) {
+                    tmp[i] = A[r][bCol + i];
+                    B[bCol + i % 4][r + 4 * (i / 4)] = tmp[i];
+                }
+                r++;
+            }
+            c = bCol;
+            while (c < bCol + 4) {
+                for (size_t i = 0; i < 4; i++) {
+                    tmp[i] = A[bRow + 4 + i][c];
+                    tmp[i+4] = B[c][bRow + 4 + i];
+                    B[c][bRow + 4 + i] = tmp[i];
+                    B[c + 4][bRow + i] = tmp[i + 4];
+                    B[c + 4][bRow + 4 + i] = A[bRow + 4 + i][c + 4];
+                }
+                c++;
+            }
+            bRow += MY_MAGIC_NUMBER_4;
+        }
+        bCol += MY_MAGIC_NUMBER_4;
+    }
+}
+
+static void transposeX(size_t M, size_t N, double A[N][M], double B[M][N],
+                       double tmp[TMPCOUNT]) {
+    assert(M > 0);
+    assert(N > 0);
+    size_t bRow = 0, bCol = 0, r = 0, c = 0;
+    while (bCol < M) {
+        while (bRow < N) {
+            r = bRow;
+            while ((r < N) && (r < bRow + 16)) {
+                c = bCol;
+                while ((c < M) && (c < bCol + 16)) {
+                    if (r != c) B[c][r] = A[r][c]; 
+                    else {
+                        tmp[0] = A[r][c];
+                        tmp[1] = (double)r;
+                    }
+                    c++;
+                }
+                if (bRow == bCol) B[(size_t)tmp[1]][(size_t)tmp[1]] = tmp[0];
+                r++;
+            }
+            bRow += 16;
+        }
+        bCol += 16;
+    }
+}
+/**
+ * @brief The solution transpose function that will be graded.
+ *
+ * You can call other transpose functions from here as you please.
+ * It's OK to choose different functions based on array size, but
+ * this function must be correct for all values of M and N.
+ */
+static void transpose_submit(size_t M, size_t N, double A[N][M], double B[M][N],
+                             double tmp[TMPCOUNT]) {
+    if (M == 32) transpose32(M, N, A, B, tmp);
+    else if (M == 64) transpose64(M, N, A, B,tmp);
+    else transposeX(M, N, A, B,tmp);
+}
+
+/**
+ * @brief Registers all transpose functions with the driver.
+ *
+ * At runtime, the driver will evaluate each function registered here, and
+ * and summarize the performance of each. This is a handy way to experiment
+ * with different transpose strategies.
+ */
+void registerFunctions(void) {
+    // Register the solution function. Do not modify this line!
+    registerTransFunction(transpose_submit, SUBMIT_DESCRIPTION);
+
+    // Register any additional transpose functions
+    registerTransFunction(trans_basic, "Basic transpose");
+    registerTransFunction(trans_tmp, "Transpose using the temporary array");
 }
